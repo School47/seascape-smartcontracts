@@ -15,18 +15,20 @@ contract SeapadNft is ERC721, ERC721Burnable, Ownable {
 
     Counters.Counter private tokenId;
 
+    uint256 public projectId;  // project to which it's used	
+
     struct Params {
 	    uint256 allocation; // allocation among total pool of investors.
 	    uint8 tier;         // tier level
-        uint256 projectId;  // project to which it's used	
+        uint8 mintType;     // mint type: 1 = prefund pool, 2 = auction pool, 3 = private investor
     }
 
-    address private factory;
+    mapping(address => bool) public minters;
 
     /// @dev returns parameters of Seascape NFT by token id.
     mapping(uint256 => Params) public paramsOf;
 
-    event Minted(address indexed owner, uint256 indexed id, uint256 allocation, uint8 tier, uint256 projectId);
+    event Minted(address indexed owner, uint256 indexed id, uint256 allocation, uint8 tier, uint8 mintType, uint256 projectId);
     
     /**
      * @dev Sets the {name} and {symbol} of token.
@@ -36,22 +38,23 @@ contract SeapadNft is ERC721, ERC721Burnable, Ownable {
 	    tokenId.increment(); // set to 1 the incrementor, so first token will be with id 1.
     }
 
-    modifier onlyFactory() {
-        require(factory == _msgSender(), "Seascape NFT: Only NFT Factory can call the method");
+    modifier onlyMinter() {
+        require(minters[_msgSender()], "Seascape NFT: Only NFT Factory can call the method");
         _;
     }
 
     /// @dev ensure that all parameters are checked on factory smartcontract
-    function mint(address to, uint256 allocation, uint8 tier, uint256 projectId) public onlyFactory returns(uint256) {
-	    uint256 _tokenId = tokenId.current();
+    function mint(address _to, uint256 _allocation, uint8 _tier, uint8 _type, uint256 _projectId) public onlyMinter returns(uint256) {
+	    require(_projectId == projectId, "Seapad: PROJECT_ID_MISMATCH");
+        uint256 _tokenId = tokenId.current();
 
-        _safeMint(to, _tokenId);
+        _safeMint(_to, _tokenId);
 
-        paramsOf[_tokenId] = Params(allocation, tier, projectId);
+        paramsOf[_tokenId] = Params(_allocation, _tier, _type);
 
         tokenId.increment();
 
-        emit Minted(to, _tokenId, allocation, tier, projectId);
+        emit Minted(_to, _tokenId, _allocation, tier, _type, projectId);
         
         return _tokenId;
     }
@@ -60,8 +63,12 @@ contract SeapadNft is ERC721, ERC721Burnable, Ownable {
 	    transferOwnership(_owner);
     }
 
-    function setFactory(address _factory) public onlyOwner {
-	    factory = _factory;
+    function setMinter(address _minter) public onlyOwner {
+	    minters[_minter] = true;
+    }
+
+    function setMinter(address _minter) public onlyOwner {
+	    minters[_minter] = false;
     }
 
     function setBaseUri(string memory _uri) public onlyOwner {
