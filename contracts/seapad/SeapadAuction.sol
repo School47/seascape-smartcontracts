@@ -25,7 +25,7 @@ contract SeapadAuction is Ownable {
     }
 
     mapping(uint256 => Project) public projects;
-    mapping(uint256 => mapping(address => bool)) public participants;
+    mapping(uint256 => mapping(address => uint256)) public spents;
     // todo track how much CWS each participant spent.
 
     event AddProject(uint256 indexed projectId, uint256 startTime, uint256 endTime);
@@ -74,7 +74,7 @@ contract SeapadAuction is Ownable {
         require(project.startTime > 0, "Seapad: INVALID_PROJECT_ID");
         require(now >= project.startTime, "Seapad: NOT_STARTED_YET");
         require(now <= project.endTime, "Seapad: FINISHED");
-        require(participants[projectId][msg.sender] == false, "Seapad: PARTICIPATED_ALREADY");
+        require(spents[projectId][msg.sender] == 0, "Seapad: PARTICIPATED_ALREADY");
         require(seapadSubmission.submissions(projectId, msg.sender), "Seapad: NOT_SUBMITTED");
         require(seapadPrefund.investments(projectId, msg.sender) == false, "Seapad: ALREADY_PREFUNDED");
 
@@ -84,7 +84,7 @@ contract SeapadAuction is Ownable {
         require(crowns.spendFrom(msg.sender, amount), "Seapad: CWS_UNSPEND");
 
         project.spent = project.spent + amount;
-        participants[projectId][msg.sender] = true;
+        spents[projectId][msg.sender] = amount;
 
         emit Participate(projectId, msg.sender, amount, now);
     }
@@ -95,5 +95,12 @@ contract SeapadAuction is Ownable {
         }
 
         return projects[projectId].endTime;
+    }
+
+    /// @notice Return spent tokens
+    /// @dev First returned parameter is investor's spent amount.
+    /// Second parameter is total spent amount
+    function getSpent(uint256 projectId, address investor) external view returns(uint256, uint256) {
+        return (spents[projectId][investor], projects[projectId].spent);
     }
 }

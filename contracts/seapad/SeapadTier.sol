@@ -145,7 +145,9 @@ contract SeapadTier is Ownable {
         emit Use(investor, level);
     }
 
-    function getTierLevel(address investor) external view returns(uint8) {
-        return badges[investor].level;
+    function getTierLevel(address investor) external view returns(int8) {
+        if (!badges[investor].usable)
+            return badges[investor].level;
+        return -1;
     }
 }

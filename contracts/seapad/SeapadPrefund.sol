@@ -138,4 +138,15 @@ contract SeapadPrefund is Ownable {
 
         return (totalPool, totalInvested);
     }
+
+    /// @notice checks whether the user had prefunded or not.
+    /// @param id of the project
+    /// @param investor who prefuned
+    function isPrefunded(uint256 id, address investor) external view returns(bool) {
+        return investments[id][investor];
+    }
+
+    function getFixedPrice(uint256 id, int8 tierLevel) external view returns(uint256) {
+        return projects[id][tierLevel - 1];
+    }
 }
