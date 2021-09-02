@@ -4,6 +4,7 @@ import "./../openzeppelin/contracts/access/Ownable.sol";
 import "./../openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./SeapadAuction.sol";
 import "./SeapadPrefund.sol";
+import "./SeapadNft.sol";
 import "./../crowns/erc-20/contracts/CrownsToken/CrownsToken.sol";
 
 /**
@@ -17,10 +18,11 @@ import "./../crowns/erc-20/contracts/CrownsToken/CrownsToken.sol";
  * and an amount of compensation in case PCC failure.
  * The determination is described as a Seapad NFT.
  */
-contract Seapad is Ownable {
-    SeapadAuction private seapadAuction;
-    SeapadPrefund private seapadPrefund;
-    CrownsToken private crowns;
+contract SeapadManagement is Ownable {
+    SeapadAuction   private seapadAuction;
+    SeapadPrefund   private seapadPrefund;
+    SeapadTier      private seapadTier;
+    CrownsToken     private crowns;
 
     uint256 private constant SCALER = 10 ** 18;
 
@@ -40,19 +42,20 @@ contract Seapad is Ownable {
 
     mapping(uint256 => Project) public projects;
 
-    /// Tracking NFT of each investor in every project.
-    /// One investor can mint one nft for project.
-    mapping(uint256 => mapping(address => uint256)) public nftIds;
+    /// @notice Check whether the user minted nft for the project or not
+    mapping(uint256 => mapping(address => uint256)) public mintedNfts;
 
     event AddProject(uint256 indexed projectId, uint256 prefundPool, uint256 auctionPool, uint256 prefundCompensation, uint256 auctionCompensation, address indexed lighthouse, uint256 startTime);
     event AddPCC(uint256 indexed projectId, address indexed pcc);
+    event ClaiNft(uint256 indexed projectId, uint256 allocation, address nft, uint256 nftId);
 
-    constructor(address _seapadAuction, address _seapadPrefund, address _crowns) public {
-        require(_seapadAuction != address(0) && _crowns != address(0) && _seapadPrefund != address(0), "Seapad: ZERO_ADDRESS");
+    constructor(address _seapadAuction, address _seapadPrefund, address _seapadTier, address _crowns) public {
+        require(_seapadAuction != address(0) && _crowns != address(0) && _seapadPrefund != address(0) && _seapadTier != address(0), "Seapad: ZERO_ADDRESS");
 
-        seapadAuction = SeapadAuction(_seapadAuction);
-        seapadPrefund = SeapadPrefund(_seapadPrefund);
-        crowns = CrownsToken(_crowns);
+        seapadAuction   = SeapadAuction(_seapadAuction);
+        seapadPrefund   = SeapadPrefund(_seapadPrefund);
+        SeapadTier      = SeapadTier(_seapadTier);
+        crowns          = CrownsToken(_crowns);
     }
 
     /// @notice add a new project to the IDO project.
@@ -115,27 +118,47 @@ contract Seapad is Ownable {
     //////////////////////////////////////////////////////////////////////
 
     /// @notice After the prefund phase, investors can get a NFT with the weight proportion to their investment.
+    /// @dev Seapad should be added into SeapadTier.badgeUser();
     function claimNft(uint256 projectId) external {
-        /// calculate allocation.
+        Project storage project = projects[projectId];
+        require(project.startTime > 0, "Seapad: PROJECT_NOT_EXIST");
+        require(block.timestamp >= project.startTime, "Seapad: NO_LAUNCH");
+        require(mintedNfts[projectId][msg.sender] == , "Seapad: ALREADY_MINTED");
 
-        /// calculation of each alloction
-        /*
-        prefund per investment = PCC prefund pool / USDC total investment
-        prefund per investment * user tier prefixed price
+        bool prefunded = seapadPrefund.isPrefunded(projectId, msg.sender);
+        uint256 totalInvested;
+        uint256 spent;
+        (spent, totalInvested) = seapadAuction.getSpent(projectId, msg.sender);
 
-        let prefund pool = 2,000
-        let investment = 80,000
-        then prefund per investment = 0.025
+        uint8 mintType;
+        require(prefunded || spent > 0, "Seapad: NOT_INVESTED");
 
-        let tier 1 price = 1000
-        then allocation = 0.025 * 1000 => 25
+        int8 tierLevel = seapadTier.getTierLevel(msg.sender);
+        require(tierLevel > 0, "Seapad: INVALID_TIER");
 
-        let auction pool = 1000
-        let auction spent = 10000
-        let per spent = 0.1
-        let user spent 1000
-        then his allocation = 100
-        */
+        uint256 perPcc;
+        uint256 allocation;        // Portion of Pool that user will get
+        uint256 totalLimit;
+
+        if (prefunded) {
+            mintType = 1;
+            (totalLimit, totalInvested) = seapadPrefunded.getTotalPool(projectId);
+
+            perPcc = project.prefundPool.mul(SCALER).div(totalInvested);
+            allocation = perPcc.mul(seapadPrefund.getFixedPrice(projectId, tierLevel));
+        } else {
+            mintType = 2;
+            perPcc = project.auctionPool.mul(SCALER).div(totalInvested);
+            allocation = perPcc.mul(spent);
+        }
+
+        SeapadNft seapadNft = SeapadNft(project.lighthouse);
+        uint256 nftId = seapadNft.mint(msg.sender, allocation, tierLevel, mintType, projectId);
+        require(nftId > 0, "Seapad: NO_NFT_MINTED");
+
+        mintedNfts[projectId][msg.sender] = nftId;
+
+        emit ClaiNft(projectId, allocation, project.lighthouse, nftId);
     }
 
     /// 100k, 10k cws, 10:1
@@ -159,18 +182,6 @@ contract Seapad is Ownable {
     /// need to ask: could it be any project. or user has to choose a certain project for burning this nft.
     // @todo any nft.
     function burnForProject(uint256 projectId, uint256 nftId, uint256 anotherProjectId) external {
-
-    }
-
-    //////////////////////////////////////////////////////////////////////
-    //
-    // After funded functions
-    //
-    //////////////////////////////////////////////////////////////////////
-
-    // do we unlock after achieving milestone or token can be unlocked any time?
-    // what happens if milestones are not achieved?
-    function unlockInvestment() external {
 
     }
 }
